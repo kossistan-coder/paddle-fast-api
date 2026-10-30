@@ -3,6 +3,8 @@ import threading
 import cv2
 import numpy as np
 
+MAX_WIDTH = 1400  # largeur de travail : les pages plus larges sont reduites (temps d'OCR ~ nb de pixels)
+
 
 class OcrEngine:
     """Enveloppe PaddleOCR : charge le modele une fois, serialise les appels."""
@@ -10,8 +12,10 @@ class OcrEngine:
     def __init__(self) -> None:
         from paddleocr import PaddleOCR  # import tardif : le modele est lourd
 
+        # Modeles "small" : ~4x plus rapides que "medium" sur CPU, MRZ lue a l'identique ("tiny" la perd)
         self._ocr = PaddleOCR(
-            lang="en",
+            text_detection_model_name="PP-OCRv6_small_det",
+            text_recognition_model_name="PP-OCRv6_small_rec",
             use_doc_orientation_classify=True,
             use_doc_unwarping=False,
             use_textline_orientation=False,
@@ -21,6 +25,9 @@ class OcrEngine:
 
     def read_lines(self, image: np.ndarray) -> list[str]:
         """Retourne les lignes de texte en ordre de lecture (fragments d'une meme ligne rejoints)."""
+        h, w = image.shape[:2]
+        if w > MAX_WIDTH:  # le temps d'OCR croit avec le nombre de pixels
+            image = cv2.resize(image, (MAX_WIDTH, round(h * MAX_WIDTH / w)), interpolation=cv2.INTER_AREA)
         with self._lock:
             results = self._ocr.predict(image)
         items = []
@@ -34,8 +41,8 @@ class OcrEngine:
         """Seconde passe sur le bas du document (ou se trouve la MRZ), agrandi si besoin."""
         h, w = image.shape[:2]
         crop = image[int(h * (1 - fraction)):, :]
-        if w < 1600:
-            scale = 1600 / w
+        if w < MAX_WIDTH:
+            scale = MAX_WIDTH / w
             crop = cv2.resize(crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC)
         return self.read_lines(crop)
 

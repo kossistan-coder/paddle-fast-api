@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from .matching import best_line_match, similarity
 from .mrz import MrzData, parse_mrz
 from .ocr_engine import OcrEngine
+from .viz import parse_visual_zone
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 4
@@ -59,6 +60,14 @@ class VerifyResponse(BaseModel):
     mrz: MrzInfo | None = None
 
 
+class ExtractResponse(BaseModel):
+    found: bool  # MRZ trouvee
+    mrz_checksums_valid: bool | None = None
+    mrz: MrzInfo | None = None
+    # Texte imprime hors MRZ (lieu de naissance, profession...) : non verifie par checksum
+    visual_zone: dict[str, str] = {}
+
+
 def _decode(data: bytes) -> list[np.ndarray]:
     """Image unique, ou pages d'un PDF rendues en image (BGR)."""
     if data.startswith(b"%PDF"):
@@ -98,32 +107,46 @@ def _name_check(provided: str, extracted: str | None, threshold: float) -> Field
                       match=score >= threshold)
 
 
+def _read_mrz(file: UploadFile) -> tuple[MrzData | None, list[str]]:
+    """OCR de toutes les pages (le recto peut porter des champs utiles) puis MRZ ; renvoie aussi le texte lu.
+
+    La seconde passe, agrandie sur le bas des pages, n'a lieu que si aucune page n'a livre de MRZ.
+    """
+    data = file.file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(413, "Fichier trop volumineux (10 Mo max).")
+    ocr = state["ocr"]
+    images = _decode(data)  # une image, ou une par page pour un PDF
+    pages = [ocr.read_lines(image) for image in images]
+    lines = [line for page in pages for line in page]
+    mrz = next((m for m in map(parse_mrz, pages) if m is not None), None)
+    for image in images if mrz is None else []:
+        bottom = ocr.read_lines_bottom(image)
+        lines += bottom
+        mrz = parse_mrz(bottom)
+        if mrz is not None:
+            break
+    return mrz, lines
+
+
+def _first_name_check(provided: str, given: list[str], threshold: float) -> FieldCheck:
+    """Compare a chaque prenom de la MRZ et a l'ensemble des prenoms ; garde le meilleur score."""
+    candidates = [*given, " ".join(given)] if len(given) > 1 else given
+    best = max(candidates, key=lambda c: similarity(provided, c), default=None)
+    return _name_check(provided, best, threshold)
+
+
 @app.post("/verify", response_model=VerifyResponse)
 def verify(
     file: UploadFile = File(..., description="Image ou PDF de la CNI (face MRZ) ou de la page photo du passeport"),
-    firstName: str = Form(..., description="Premier prenom"),
+    firstName: str = Form(..., description="Un des prenoms, ou tous les prenoms separes par des espaces"),
     lastName: str = Form(...),
     birthDate: date = Form(..., description="YYYY-MM-DD"),
     otherFirstNames: str | None = Form(None, description="Autres prenoms, separes par des espaces"),
     profession: str | None = Form(None),
     threshold: float = Form(0.85, ge=0.5, le=1.0, description="Score minimal de similarite des noms"),
 ):
-    data = file.file.read(MAX_UPLOAD_BYTES + 1)
-    if len(data) > MAX_UPLOAD_BYTES:
-        raise HTTPException(413, "Fichier trop volumineux (10 Mo max).")
-    ocr = state["ocr"]
-    lines: list[str] = []
-    mrz = None
-    for image in _decode(data):  # une seule iteration pour une image, une par page pour un PDF
-        page_lines = ocr.read_lines(image)
-        mrz = parse_mrz(page_lines)
-        if mrz is None:
-            bottom = ocr.read_lines_bottom(image)
-            mrz = parse_mrz(bottom)
-            page_lines += bottom
-        lines += page_lines
-        if mrz is not None:
-            break
+    mrz, lines = _read_mrz(file)
     if mrz is None:
         return VerifyResponse(decision="MRZ_NOT_FOUND")
 
@@ -133,7 +156,7 @@ def verify(
         mrz_checksums_valid=mrz.checks_valid,
         mrz=_mrz_info(mrz),
         last_name=_name_check(lastName, mrz.surname, threshold),
-        first_name=_name_check(firstName, given[0] if given else None, threshold),
+        first_name=_first_name_check(firstName, given, threshold),
     )
     if otherFirstNames and otherFirstNames.strip():
         resp.other_first_names = _name_check(otherFirstNames, " ".join(given[1:]) or None, threshold)
@@ -159,3 +182,15 @@ def verify(
     else:
         resp.decision = "REJECTED"
     return resp
+
+
+@app.post("/extract", response_model=ExtractResponse)
+def extract(
+    file: UploadFile = File(..., description="Image ou PDF de la CNI (face MRZ) ou de la page photo du passeport"),
+):
+    mrz, lines = _read_mrz(file)
+    visual_zone = parse_visual_zone(lines)
+    if mrz is None:
+        return ExtractResponse(found=False, visual_zone=visual_zone)
+    return ExtractResponse(found=True, mrz_checksums_valid=mrz.checks_valid, mrz=_mrz_info(mrz),
+                           visual_zone=visual_zone)
