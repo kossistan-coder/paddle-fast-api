@@ -128,10 +128,11 @@ def _parse_td1(l1: str, l2: str, l3: str) -> MrzData:
                    _parse_date(l2[8:14], False), checks, [l1, l2, l3])
 
 
-def parse_mrz(raw_lines: list[str]) -> MrzData | None:
+def parse_mrz(raw_lines: list[str], preferred: set[str] | None = None) -> MrzData | None:
     """Cherche dans les lignes OCR (ordre de lecture) un bloc MRZ valide et le parse.
 
-    Si plusieurs blocs sont possibles, celui dont les check digits passent est prefere.
+    Si plusieurs blocs sont possibles, un format de `preferred` (ex. {"TD3"}) l'emporte,
+    puis celui dont les check digits passent.
     """
     candidates = []
     for raw in raw_lines:
@@ -150,4 +151,4 @@ def parse_mrz(raw_lines: list[str]) -> MrzData | None:
                 results.append(parsers[fmt](*group))
     if not results:
         return None
-    return max(results, key=lambda m: sum(m.checks.values()))
+    return max(results, key=lambda m: (bool(preferred) and m.format in preferred, sum(m.checks.values())))

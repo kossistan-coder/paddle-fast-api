@@ -1,0 +1,16 @@
+services:
+  cni-service:
+    build: .
+    image: cni-service:latest
+    ports:
+      - "127.0.0.1:8000:8000"  # joignable seulement en local / par le reverse proxy
+    env_file: .env  # doit definir API_KEY
+    restart: unless-stopped
+    mem_limit: 4g  # 2 moteurs OCR ~ 2,5 Go
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
