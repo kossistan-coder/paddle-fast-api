@@ -60,3 +60,36 @@ def test_visual_zone():
     assert v["place_of_birth"] == "LOME /GOLFE" and v["profession"] == "MEDECIN"
     assert v["blood_group"] == "A+" and v["address"] == "BE KPOTA"
     assert v["father"] == "DUPONT, MARC" and v["mother"] == "DOE, ANNE"
+
+
+def test_verify_birth_date_optional():
+    import cv2
+    import numpy as np
+    from fastapi.testclient import TestClient
+
+    from app import main
+
+    class FakeOcr:
+        def read_lines(self, image):
+            return TD1
+
+        def read_lines_bottom(self, image):
+            return []
+
+    main.state["ocr"] = FakeOcr()
+    client = TestClient(main.app)  # sans "with" : le vrai modele n'est pas charge
+    png = cv2.imencode(".png", np.full((10, 10, 3), 255, np.uint8))[1].tobytes()
+
+    def verify(**form):
+        r = client.post("/verify", files={"file": ("cni.png", png, "image/png")}, data=form)
+        assert r.status_code == 200, r.text
+        return r.json()
+
+    names = {"firstName": "Anna", "lastName": "Eriksson"}
+    for form in (names, {**names, "birthDate": ""}):
+        d = verify(**form)
+        assert d["decision"] == "VERIFIED" and d["birth_date"] is None
+    assert verify(**names, birthDate="1974-08-12")["decision"] == "VERIFIED"
+    assert verify(**names, birthDate="1980-01-01")["decision"] == "REJECTED"
+    assert client.post("/verify", files={"file": ("cni.png", png, "image/png")},
+                       data={"firstName": "Anna"}).status_code == 422  # le nom reste obligatoire

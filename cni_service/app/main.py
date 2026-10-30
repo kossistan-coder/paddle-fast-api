@@ -141,7 +141,7 @@ def verify(
     file: UploadFile = File(..., description="Image ou PDF de la CNI (face MRZ) ou de la page photo du passeport"),
     firstName: str = Form(..., description="Un des prenoms, ou tous les prenoms separes par des espaces"),
     lastName: str = Form(...),
-    birthDate: date = Form(..., description="YYYY-MM-DD"),
+    birthDate: date | None = Form(None, description="YYYY-MM-DD ; verifiee seulement si fournie"),
     otherFirstNames: str | None = Form(None, description="Autres prenoms, separes par des espaces"),
     profession: str | None = Form(None),
     threshold: float = Form(0.85, ge=0.5, le=1.0, description="Score minimal de similarite des noms"),
@@ -161,11 +161,12 @@ def verify(
     if otherFirstNames and otherFirstNames.strip():
         resp.other_first_names = _name_check(otherFirstNames, " ".join(given[1:]) or None, threshold)
 
-    birth_ok = mrz.birth_date == birthDate
-    resp.birth_date = FieldCheck(
-        provided=birthDate.isoformat(),
-        extracted=mrz.birth_date.isoformat() if mrz.birth_date else None,
-        score=1.0 if birth_ok else 0.0, match=birth_ok)
+    if birthDate is not None:
+        birth_ok = mrz.birth_date == birthDate
+        resp.birth_date = FieldCheck(
+            provided=birthDate.isoformat(),
+            extracted=mrz.birth_date.isoformat() if mrz.birth_date else None,
+            score=1.0 if birth_ok else 0.0, match=birth_ok)
 
     if profession and profession.strip():
         score, line = best_line_match(profession, lines)
