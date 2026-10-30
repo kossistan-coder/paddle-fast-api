@@ -1,0 +1,8 @@
+fastapi
+uvicorn[standard]
+python-multipart
+opencv-python-headless
+numpy
+pymupdf
+paddlepaddle
+paddleocr>=3
