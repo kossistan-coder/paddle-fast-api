@@ -1,0 +1,583 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Verification CNI / Passeport (MRZ)",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/health": {
+      "get": {
+        "summary": "Health",
+        "operationId": "health_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          }
+        }
+      }
+    },
+    "/verify": {
+      "post": {
+        "summary": "Verify",
+        "operationId": "verify_verify_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_verify_verify_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VerifyResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    },
+    "/extract": {
+      "post": {
+        "summary": "Extract",
+        "operationId": "extract_extract_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_extract_extract_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ExtractResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        },
+        "security": [
+          {
+            "APIKeyHeader": []
+          }
+        ]
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "Body_extract_extract_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "Image ou PDF de la CNI (face MRZ) ou de la page photo du passeport"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file"
+        ],
+        "title": "Body_extract_extract_post"
+      },
+      "Body_verify_verify_post": {
+        "properties": {
+          "file": {
+            "type": "string",
+            "contentMediaType": "application/octet-stream",
+            "title": "File",
+            "description": "Image ou PDF (4 pages max) : recto et verso de la CNI, ou page photo du passeport"
+          },
+          "firstName": {
+            "type": "string",
+            "title": "Firstname",
+            "description": "Un des prenoms, ou tous les prenoms separes par des espaces"
+          },
+          "lastName": {
+            "type": "string",
+            "title": "Lastname"
+          },
+          "birthDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birthdate",
+            "description": "YYYY-MM-DD ; verifiee seulement si fournie"
+          },
+          "otherFirstNames": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Otherfirstnames",
+            "description": "Autres prenoms, separes par des espaces"
+          },
+          "profession": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profession"
+          },
+          "threshold": {
+            "type": "number",
+            "maximum": 1.0,
+            "minimum": 0.5,
+            "title": "Threshold",
+            "description": "Score minimal de similarite des noms",
+            "default": 0.85
+          },
+          "documentType": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "cni",
+                  "passport"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documenttype",
+            "description": "Format MRZ cherche en priorite : cni (TD1/TD2) ou passport (TD3)"
+          },
+          "documentNumber": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentnumber",
+            "description": "Numero de la piece ; comparaison informative"
+          },
+          "documentExpiresAt": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Documentexpiresat",
+            "description": "YYYY-MM-DD ; verifiee seulement si fournie"
+          }
+        },
+        "type": "object",
+        "required": [
+          "file",
+          "firstName",
+          "lastName"
+        ],
+        "title": "Body_verify_verify_post"
+      },
+      "ExtractResponse": {
+        "properties": {
+          "found": {
+            "type": "boolean",
+            "title": "Found"
+          },
+          "mrz_checksums_valid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mrz Checksums Valid"
+          },
+          "mrz": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MrzInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "visual_zone": {
+            "additionalProperties": {
+              "type": "string"
+            },
+            "type": "object",
+            "title": "Visual Zone",
+            "default": {}
+          }
+        },
+        "type": "object",
+        "required": [
+          "found"
+        ],
+        "title": "ExtractResponse"
+      },
+      "FieldCheck": {
+        "properties": {
+          "provided": {
+            "type": "string",
+            "title": "Provided"
+          },
+          "extracted": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Extracted"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score"
+          },
+          "match": {
+            "type": "boolean",
+            "title": "Match"
+          }
+        },
+        "type": "object",
+        "required": [
+          "provided",
+          "extracted",
+          "score",
+          "match"
+        ],
+        "title": "FieldCheck"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "MrzInfo": {
+        "properties": {
+          "format": {
+            "type": "string",
+            "title": "Format"
+          },
+          "document_type": {
+            "type": "string",
+            "title": "Document Type"
+          },
+          "issuer": {
+            "type": "string",
+            "title": "Issuer"
+          },
+          "nationality": {
+            "type": "string",
+            "title": "Nationality"
+          },
+          "document_number": {
+            "type": "string",
+            "title": "Document Number"
+          },
+          "surname": {
+            "type": "string",
+            "title": "Surname"
+          },
+          "given_names": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Given Names"
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Birth Date"
+          },
+          "expiry_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Expiry Date"
+          },
+          "sex": {
+            "type": "string",
+            "title": "Sex"
+          },
+          "checks": {
+            "additionalProperties": {
+              "type": "boolean"
+            },
+            "type": "object",
+            "title": "Checks"
+          },
+          "lines": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Lines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "format",
+          "document_type",
+          "issuer",
+          "nationality",
+          "document_number",
+          "surname",
+          "given_names",
+          "birth_date",
+          "expiry_date",
+          "sex",
+          "checks",
+          "lines"
+        ],
+        "title": "MrzInfo"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          },
+          "input": {
+            "title": "Input"
+          },
+          "ctx": {
+            "type": "object",
+            "title": "Context"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      },
+      "VerifyResponse": {
+        "properties": {
+          "decision": {
+            "type": "string",
+            "enum": [
+              "VERIFIED",
+              "REVIEW",
+              "REJECTED",
+              "MRZ_NOT_FOUND"
+            ],
+            "title": "Decision",
+            "description": "VERIFIED : tous les champs compares concordent et les chiffres de controle de la MRZ sont valides. REVIEW : tous les champs compares concordent mais un chiffre de controle de la MRZ est faux (lecture douteuse, a verifier manuellement). REJECTED : au moins un champ compare (nom, prenoms, date de naissance, date d'expiration) differe. MRZ_NOT_FOUND : aucune MRZ lisible dans le document ; aucun champ n'est compare. La profession et le numero de document sont informatifs et n'influencent jamais la decision."
+          },
+          "mrz_checksums_valid": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Mrz Checksums Valid"
+          },
+          "last_name": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "first_name": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "other_first_names": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "birth_date": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "profession": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mrz": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/MrzInfo"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "document_number": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldCheck"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Informatif : le numero imprime sur une carte peut differer de celui de la MRZ."
+          },
+          "expiry_date": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldCheck"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "decision"
+        ],
+        "title": "VerifyResponse"
+      }
+    },
+    "securitySchemes": {
+      "APIKeyHeader": {
+        "type": "apiKey",
+        "in": "header",
+        "name": "x-api-key"
+      }
+    }
+  }
+}

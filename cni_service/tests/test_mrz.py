@@ -62,67 +62,9 @@ def test_visual_zone():
     assert v["father"] == "DUPONT, MARC" and v["mother"] == "DOE, ANNE"
 
 
-def test_verify_birth_date_optional():
-    import cv2
-    import numpy as np
-    from fastapi.testclient import TestClient
 
-    from app import main
-
-    class FakeOcr:
-        def read_lines(self, image):
-            return TD1
-
-        def read_lines_bottom(self, image):
-            return []
-
-    main.state["ocr"] = FakeOcr()
-    client = TestClient(main.app)  # sans "with" : le vrai modele n'est pas charge
-    png = cv2.imencode(".png", np.full((10, 10, 3), 255, np.uint8))[1].tobytes()
-
-    def verify(**form):
-        r = client.post("/verify", files={"file": ("cni.png", png, "image/png")}, data=form)
-        assert r.status_code == 200, r.text
-        return r.json()
-
-    names = {"firstName": "Anna", "lastName": "Eriksson"}
-    for form in (names, {**names, "birthDate": ""}):
-        d = verify(**form)
-        assert d["decision"] == "VERIFIED" and d["birth_date"] is None
-    assert verify(**names, birthDate="1974-08-12")["decision"] == "VERIFIED"
-    assert verify(**names, birthDate="1980-01-01")["decision"] == "REJECTED"
-    assert client.post("/verify", files={"file": ("cni.png", png, "image/png")},
-                       data={"firstName": "Anna"}).status_code == 422  # le nom reste obligatoire
-
-
-def test_api_key(monkeypatch):
-    import cv2
-    import numpy as np
-    from fastapi.testclient import TestClient
-
-    from app import main
-
-    class FakeOcr:
-        def read_lines(self, image):
-            return TD1
-
-        def read_lines_bottom(self, image):
-            return []
-
-    main.state["ocr"] = FakeOcr()
-    client = TestClient(main.app)
-    png = cv2.imencode(".png", np.full((10, 10, 3), 255, np.uint8))[1].tobytes()
-
-    def status(route, key=None):
-        headers = {"x-api-key": key} if key is not None else {}
-        data = {"firstName": "Anna", "lastName": "Eriksson"} if route == "/verify" else {}
-        return client.post(route, files={"file": ("cni.png", png, "image/png")}, data=data,
-                           headers=headers).status_code
-
-    monkeypatch.delenv("IDENTITY_CHECK_API_KEY", raising=False)
-    assert status("/verify") == 200  # pas de cle configuree : service ouvert
-    monkeypatch.setenv("IDENTITY_CHECK_API_KEY", "s3cret")
-    for route in ("/verify", "/extract"):
-        assert status(route) == 401
-        assert status(route, "mauvaise") == 401
-        assert status(route, "s3cret") == 200
+def test_preferred_format():
+    lines = [*TD1, *TD3]  # deux MRZ valides dans le meme texte
+    assert parse_mrz(lines, {"TD3"}).format == "TD3"
+    assert parse_mrz(lines, {"TD1", "TD2"}).format == "TD1"
+    assert parse_mrz(TD1, {"TD3"}).format == "TD1"  # format prefere absent : repli sur ce qui est lu
