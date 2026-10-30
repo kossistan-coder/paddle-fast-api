@@ -1,9 +1,13 @@
+import hmac
+import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import date
 
 import cv2
 import numpy as np
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Security, UploadFile
+from fastapi.security import APIKeyHeader
 from pydantic import BaseModel
 
 from .matching import best_line_match, similarity
@@ -14,11 +18,22 @@ from .viz import parse_visual_zone
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 4
 PDF_DPI = 200
+API_KEY_ENV = "IDENTITY_CHECK_API_KEY"
 state: dict[str, OcrEngine] = {}
+_api_key_header = APIKeyHeader(name="x-api-key", auto_error=False)
+
+
+def require_api_key(key: str | None = Security(_api_key_header)) -> None:
+    """Exige l'en-tete x-api-key si IDENTITY_CHECK_API_KEY est defini ; sinon service ouvert (dev)."""
+    expected = os.environ.get(API_KEY_ENV)
+    if expected and not (key and hmac.compare_digest(key.encode(), expected.encode())):
+        raise HTTPException(401, "Cle API absente ou invalide (en-tete x-api-key).")
 
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
+    if not os.environ.get(API_KEY_ENV):
+        logging.getLogger("uvicorn.error").warning("%s non defini : API accessible sans cle.", API_KEY_ENV)
     state["ocr"] = OcrEngine()
     yield
     state.clear()
@@ -136,7 +151,7 @@ def _first_name_check(provided: str, given: list[str], threshold: float) -> Fiel
     return _name_check(provided, best, threshold)
 
 
-@app.post("/verify", response_model=VerifyResponse)
+@app.post("/verify", dependencies=[Depends(require_api_key)], response_model=VerifyResponse)
 def verify(
     file: UploadFile = File(..., description="Image ou PDF de la CNI (face MRZ) ou de la page photo du passeport"),
     firstName: str = Form(..., description="Un des prenoms, ou tous les prenoms separes par des espaces"),
@@ -185,7 +200,7 @@ def verify(
     return resp
 
 
-@app.post("/extract", response_model=ExtractResponse)
+@app.post("/extract", dependencies=[Depends(require_api_key)], response_model=ExtractResponse)
 def extract(
     file: UploadFile = File(..., description="Image ou PDF de la CNI (face MRZ) ou de la page photo du passeport"),
 ):

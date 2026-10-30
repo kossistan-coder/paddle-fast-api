@@ -93,3 +93,36 @@ def test_verify_birth_date_optional():
     assert verify(**names, birthDate="1980-01-01")["decision"] == "REJECTED"
     assert client.post("/verify", files={"file": ("cni.png", png, "image/png")},
                        data={"firstName": "Anna"}).status_code == 422  # le nom reste obligatoire
+
+
+def test_api_key(monkeypatch):
+    import cv2
+    import numpy as np
+    from fastapi.testclient import TestClient
+
+    from app import main
+
+    class FakeOcr:
+        def read_lines(self, image):
+            return TD1
+
+        def read_lines_bottom(self, image):
+            return []
+
+    main.state["ocr"] = FakeOcr()
+    client = TestClient(main.app)
+    png = cv2.imencode(".png", np.full((10, 10, 3), 255, np.uint8))[1].tobytes()
+
+    def status(route, key=None):
+        headers = {"x-api-key": key} if key is not None else {}
+        data = {"firstName": "Anna", "lastName": "Eriksson"} if route == "/verify" else {}
+        return client.post(route, files={"file": ("cni.png", png, "image/png")}, data=data,
+                           headers=headers).status_code
+
+    monkeypatch.delenv("IDENTITY_CHECK_API_KEY", raising=False)
+    assert status("/verify") == 200  # pas de cle configuree : service ouvert
+    monkeypatch.setenv("IDENTITY_CHECK_API_KEY", "s3cret")
+    for route in ("/verify", "/extract"):
+        assert status(route) == 401
+        assert status(route, "mauvaise") == 401
+        assert status(route, "s3cret") == 200
