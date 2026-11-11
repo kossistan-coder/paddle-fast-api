@@ -26,7 +26,7 @@ from .viz import parse_visual_zone
 
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 MAX_PDF_PAGES = 4
-PDF_DPI = 200
+PDF_DPI = 300  # assez fin pour que les espaces entre les mots d'une carte scannee petite restent lisibles
 MAX_CONCURRENT_ANALYSES = 2  # un moteur OCR (~1,1 Go de RAM) par analyse simultanee
 REQUEST_TIMEOUT_S = 25
 RETRY_AFTER_S = 10
@@ -103,6 +103,8 @@ class MrzInfo(BaseModel):
     # Nom et prenoms consolides : MRZ en priorite, zone visuelle si la MRZ ne les donne pas
     last_name: str | None = None
     first_names: str | None = None
+    # Numero personnel (CPF, NIN...) des donnees facultatives de la MRZ, sinon celui de la zone visuelle
+    personal_number: str | None = None
 
 
 Decision = Literal["VERIFIED", "REVIEW", "REJECTED", "MRZ_NOT_FOUND"]
@@ -181,7 +183,8 @@ def _mrz_info(m: MrzData, visual_zone: dict[str, str]) -> MrzInfo:
                    given_names=m.given_names, birth_date=m.birth_date, expiry_date=m.expiry_date,
                    sex=m.sex, checks=m.checks, lines=m.lines,
                    last_name=m.surname or visual_zone.get("last_name"),
-                   first_names=" ".join(m.given_names) or visual_zone.get("first_names"))
+                   first_names=" ".join(m.given_names) or visual_zone.get("first_names"),
+                   personal_number=m.personal_number or visual_zone.get("personal_number"))
 
 
 def _name_check(provided: str, extracted: str | None, threshold: float) -> FieldCheck:

@@ -422,6 +422,17 @@
               }
             ],
             "title": "First Names"
+          },
+          "personal_number": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Personal Number"
           }
         },
         "type": "object",

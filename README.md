@@ -357,8 +357,8 @@ Toutes les pages sont lues (le recto d'une CNI porte des champs imprimés utiles
 |---|---|
 | `found` | `true` si une MRZ a été trouvée |
 | `mrz_checksums_valid` | `true` si tous les chiffres de contrôle sont valides (`null` sans MRZ) |
-| `mrz` | Même objet que dans `/verify` (`null` sans MRZ) |
-| `visual_zone` | Champs imprimés hors MRZ repérés par leur libellé : `national_number`, `last_name`, `first_names`, `birth_date`, `place_of_birth`, `sex`, `profession`, `issue_date`, `expiry_date`, `height`, `blood_group`, `address`, `distinguishing_marks`, `father`, `mother`, `emergency_contact`, `document_number` (numéro du document, même nom que dans `mrz` : numéro de carte imprimé sans libellé sur la CNI, « N° du passeport » sur un passeport ; `national_number` est le NIN de la personne), et pour les passeports `nationality`, `place_of_issue`, `issuing_authority`. Les dates (`birth_date`, `issue_date`, `expiry_date`) sont au format `AAAA-MM-JJ`, comme dans `mrz` ; une date illisible est renvoyée telle qu'imprimée. Seuls les libellés trouvés sont présents. Non vérifiés par checksum |
+| `mrz` | Même objet que dans `/verify` (`null` sans MRZ). `last_name`, `first_names` et `personal_number` y sont consolidés : valeur de la MRZ en priorité, sinon celle de `visual_zone`. `personal_number` vient des données facultatives de la MRZ (CPF, NIN… selon le pays) ; sur un passeport (TD3), il a son propre chiffre de contrôle, `checks.personal_number` |
+| `visual_zone` | Champs imprimés hors MRZ repérés par leur libellé : `national_number`, `last_name`, `first_names`, `birth_date`, `place_of_birth`, `sex`, `profession`, `issue_date`, `expiry_date`, `height`, `blood_group`, `address`, `distinguishing_marks`, `father`, `mother`, `emergency_contact`, `document_number` (numéro du document, même nom que dans `mrz` : numéro de carte imprimé sans libellé sur la CNI, « N° du passeport » sur un passeport ; `national_number` est le NIN de la personne), et pour les passeports `nationality`, `place_of_issue`, `issuing_authority`, `eye_color`, `personal_number` (`height` aussi sur les passeports). Les dates (`birth_date`, `issue_date`, `expiry_date`) sont au format `AAAA-MM-JJ`, comme dans `mrz` ; une date illisible est renvoyée telle qu'imprimée. Seuls les libellés trouvés sont présents. Non vérifiés par checksum |
 
 ```bash
 curl -sS -X POST https://api.example.com/extract -H "x-api-key: $API_KEY" -F file=@specimen.pdf
@@ -435,7 +435,7 @@ Les erreurs ont la forme `{"detail": "..."}`.
 | Fonction | Rôle |
 |---|---|
 | `OcrEngine.__init__` | Charge PaddleOCR une seule fois avec les modèles `PP-OCRv6_small_det` / `PP-OCRv6_small_rec`, classification d'orientation activée, exécutés par ONNX Runtime (`OCR_THREADS` threads). Un verrou sérialise les appels. |
-| `OcrEngine.read_lines` | Réduit l'image à 1400 px de large si nécessaire, lance l'OCR et renvoie les lignes de texte en ordre de lecture. |
+| `OcrEngine.read_lines` | Détecte les lignes sur l'image ramenée à 1400 px de large (`MAX_WIDTH`), mais les lit dans l'image d'origine (jusqu'à `READ_MAX_WIDTH`) pour garder les espaces entre les mots ; renvoie les lignes en ordre de lecture, avec la position de chaque fragment. |
 | `OcrEngine.read_lines_bottom` | Seconde passe sur les 40 % inférieurs de l'image (zone MRZ), agrandis à 1400 px si l'image est plus étroite. |
 | `_group_lines` | Regroupe les fragments situés sur la même ligne (centres verticaux à moins d'une demi-hauteur) et les trie de gauche à droite ; les fragments d'une ligne MRZ (contenant `<`) sont collés sans espace. |
 
@@ -465,7 +465,7 @@ Créer `.env` avec `API_KEY=<clé>` (voir [Démarrage rapide](#démarrage-rapide
 
 La documentation interactive est alors sur http://127.0.0.1:8000/docs.
 
-Les tests (20) utilisent un faux moteur OCR : aucun modèle n'est chargé, ils s'exécutent en quelques secondes.
+Les tests (26) utilisent un faux moteur OCR : aucun modèle n'est chargé, ils s'exécutent en quelques secondes.
 
 ```bash
 .venv/bin/pip install pytest
@@ -488,8 +488,9 @@ Variables d'environnement : `API_KEY` (obligatoire) et `OCR_THREADS` (threads ON
 | `RETRY_AFTER_S` | `app/main.py` | `10` | Valeur de l'en-tête `Retry-After` sur 503 |
 | `MAX_UPLOAD_BYTES` | `app/main.py` | `10 Mo` | Taille maximale du fichier (413). Ajuster aussi la limite du reverse proxy |
 | `MAX_PDF_PAGES` | `app/main.py` | `4` | Nombre maximal de pages d'un PDF (422) |
-| `PDF_DPI` | `app/main.py` | `200` | Résolution du rendu des pages PDF |
-| `MAX_WIDTH` | `app/ocr_engine.py` | `1400` | Largeur de travail de l'OCR ; le temps d'OCR croît avec le nombre de pixels |
+| `PDF_DPI` | `app/main.py` | `300` | Résolution du rendu des pages PDF ; assez fine pour lire les espaces d'une carte scannée petite sur une page A4 |
+| `MAX_WIDTH` | `app/ocr_engine.py` | `1400` | Largeur de travail de la détection ; son temps croît avec le nombre de pixels |
+| `READ_MAX_WIDTH` | `app/ocr_engine.py` | `4000` | Largeur maximale de l'image dans laquelle les lignes sont lues |
 
 Modifier `app/ocr_engine.py` invalide la couche Docker qui contient les modèles : le build suivant les retélécharge.
 
@@ -497,7 +498,7 @@ Performances mesurées sur CPU (Core i7-1355U, sous Docker) : `/extract` répond
 
 ## Limites connues
 
-- **Zone visuelle** : `parse_visual_zone` est calibrée sur les libellés de la CNI togolaise et sur les libellés bilingues français/anglais des passeports. Sur d'autres documents, `visual_zone` peut être vide ou incomplète. Ces valeurs ne sont protégées par aucun chiffre de contrôle.
+- **Zone visuelle** : `parse_visual_zone` reconnaît les libellés de la CNI togolaise et ceux des passeports en anglais, français et espagnol (au moins une de ces langues est imposée par la norme ICAO 9303 sur tout passeport conforme), ainsi qu'en portugais, italien et allemand. Les mois en lettres de ces langues sont convertis. Un texte masqué par un hologramme ou un reflet reste illisible : `visual_zone` peut alors être incomplète. Une photo prise bien à plat donne les meilleurs résultats. Ces valeurs ne sont protégées par aucun chiffre de contrôle : la MRZ fait foi.
 - **Pas de contrôle de péremption** : `documentExpiresAt` est comparée à la date de la MRZ, mais le service ne vérifie pas que le document est encore valide à la date du jour. Ce contrôle revient à l'appelant (`mrz.expiry_date`).
 - **Numéro de document** : sur certaines cartes, le numéro imprimé diffère de celui de la MRZ. C'est pourquoi `document_number` est purement informatif.
 - **Siècle des dates** : la date d'expiration est toujours lue en 20xx ; la date de naissance prend 19xx si l'année est postérieure à l'année en cours.

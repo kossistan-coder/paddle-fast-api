@@ -79,6 +79,7 @@ class MrzData:
     expiry_date: date | None
     checks: dict[str, bool] = field(default_factory=dict)
     lines: list[str] = field(default_factory=list)
+    personal_number: str = ""  # donnees facultatives (numero personnel : CPF, NIN...), vide si absentes
 
     @property
     def checks_valid(self) -> bool:
@@ -89,17 +90,24 @@ def _chk(value: str, digit: str) -> bool:
     return check_digit(value) == _digits(digit)
 
 
+def _optional(data: str) -> str:
+    return data.replace("<", " ").strip().replace(" ", "")
+
+
 def _parse_td3(l1: str, l2: str) -> MrzData:
     surname, given = _parse_names(l1[5:44])
+    personal = _optional(l2[28:42])
     checks = {
         "doc_number": _chk(l2[0:9], l2[9]),
         "birth_date": _chk(_digits(l2[13:19]), l2[19]),
         "expiry_date": _chk(_digits(l2[21:27]), l2[27]),
+        # numero personnel absent : chiffre de controle "<" ou "0"
+        "personal_number": _chk(l2[28:42], l2[42]) if personal else l2[42] in "<0O",
         "composite": _chk(l2[0:10] + _digits(l2[13:20]) + _digits(l2[21:28]) + l2[28:43], l2[43]),
     }
     return MrzData("TD3", l1[0:2].strip("<"), _alpha(l1[2:5]), surname, given, l2[0:9].strip("<"),
                    _alpha(l2[10:13]), _parse_date(l2[13:19], True), l2[20],
-                   _parse_date(l2[21:27], False), checks, [l1, l2])
+                   _parse_date(l2[21:27], False), checks, [l1, l2], personal)
 
 
 def _parse_td2(l1: str, l2: str) -> MrzData:
@@ -112,7 +120,7 @@ def _parse_td2(l1: str, l2: str) -> MrzData:
     }
     return MrzData("TD2", l1[0:2].strip("<"), _alpha(l1[2:5]), surname, given, l2[0:9].strip("<"),
                    _alpha(l2[10:13]), _parse_date(l2[13:19], True), l2[20],
-                   _parse_date(l2[21:27], False), checks, [l1, l2])
+                   _parse_date(l2[21:27], False), checks, [l1, l2], _optional(l2[28:35]))
 
 
 def _parse_td1(l1: str, l2: str, l3: str) -> MrzData:
@@ -125,7 +133,7 @@ def _parse_td1(l1: str, l2: str, l3: str) -> MrzData:
     }
     return MrzData("TD1", l1[0:2].strip("<"), _alpha(l1[2:5]), surname, given, l1[5:14].strip("<"),
                    _alpha(l2[15:18]), _parse_date(l2[0:6], True), l2[7],
-                   _parse_date(l2[8:14], False), checks, [l1, l2, l3])
+                   _parse_date(l2[8:14], False), checks, [l1, l2, l3], _optional(l1[15:30]))
 
 
 def parse_mrz(raw_lines: list[str], preferred: set[str] | None = None) -> MrzData | None:
