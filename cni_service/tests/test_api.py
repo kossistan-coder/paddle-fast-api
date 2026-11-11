@@ -1,4 +1,5 @@
 """Tests des routes avec un faux moteur OCR (aucun modele charge)."""
+import dataclasses
 import queue
 import time
 
@@ -9,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app import main
+from app.mrz import parse_mrz
 from tests.test_mrz import TD1
 
 KEY = "test-key"
@@ -94,6 +96,15 @@ def test_two_page_pdf(ocr):
     assert post(content=pdf(True, False)).json()["decision"] == "VERIFIED"
     assert ocr.calls == 1  # arret a la premiere page portant une MRZ
     assert post(content=pdf(False, False)).json()["decision"] == "MRZ_NOT_FOUND"
+
+
+def test_extract_consolidated_names(ocr):
+    m = post("/extract").json()["mrz"]
+    assert m["last_name"] == "ERIKSSON" and m["first_names"] == "ANNA MARIA"
+    # MRZ sans noms lisibles : repli sur la zone visuelle
+    empty = dataclasses.replace(parse_mrz(TD1), surname="", given_names=[])
+    info = main._mrz_info(empty, {"last_name": "ERIKSSON", "first_names": "Anna Maria"})
+    assert info.last_name == "ERIKSSON" and info.first_names == "Anna Maria"
 
 
 def test_document_limits(ocr):

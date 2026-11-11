@@ -1,9 +1,12 @@
+import os
 import threading
 
 import cv2
 import numpy as np
 
 MAX_WIDTH = 1400  # largeur de travail : les pages plus larges sont reduites (temps d'OCR ~ nb de pixels)
+# Threads ONNX Runtime par moteur : 4 est le plus rapide mesure (plus de threads se genent)
+OCR_THREADS = int(os.environ.get("OCR_THREADS", "4"))
 
 
 class OcrEngine:
@@ -19,7 +22,9 @@ class OcrEngine:
             use_doc_orientation_classify=True,
             use_doc_unwarping=False,
             use_textline_orientation=False,
-            enable_mkldnn=False,  # evite le bug oneDNN/PIR de Paddle 3 sur CPU
+            # ONNX Runtime : ~3x plus rapide que Paddle Inference sur CPU (dont oneDNN plante), meme texte lu
+            engine="onnxruntime",
+            engine_config={"intra_op_num_threads": OCR_THREADS},
         )
         self._lock = threading.Lock()
 

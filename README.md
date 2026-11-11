@@ -434,7 +434,7 @@ Les erreurs ont la forme `{"detail": "..."}`.
 
 | Fonction | Rôle |
 |---|---|
-| `OcrEngine.__init__` | Charge PaddleOCR une seule fois avec les modèles `PP-OCRv6_small_det` / `PP-OCRv6_small_rec`, classification d'orientation activée, MKL-DNN désactivé. Un verrou sérialise les appels. |
+| `OcrEngine.__init__` | Charge PaddleOCR une seule fois avec les modèles `PP-OCRv6_small_det` / `PP-OCRv6_small_rec`, classification d'orientation activée, exécutés par ONNX Runtime (`OCR_THREADS` threads). Un verrou sérialise les appels. |
 | `OcrEngine.read_lines` | Réduit l'image à 1400 px de large si nécessaire, lance l'OCR et renvoie les lignes de texte en ordre de lecture. |
 | `OcrEngine.read_lines_bottom` | Seconde passe sur les 40 % inférieurs de l'image (zone MRZ), agrandis à 1400 px si l'image est plus étroite. |
 | `_group_lines` | Regroupe les fragments situés sur la même ligne (centres verticaux à moins d'une demi-hauteur) et les trie de gauche à droite ; les fragments d'une ligne MRZ (contenant `<`) sont collés sans espace. |
@@ -465,7 +465,7 @@ Créer `.env` avec `API_KEY=<clé>` (voir [Démarrage rapide](#démarrage-rapide
 
 La documentation interactive est alors sur http://127.0.0.1:8000/docs.
 
-Les tests (15) utilisent un faux moteur OCR : aucun modèle n'est chargé, ils s'exécutent en quelques secondes.
+Les tests (16) utilisent un faux moteur OCR : aucun modèle n'est chargé, ils s'exécutent en quelques secondes.
 
 ```bash
 .venv/bin/pip install pytest
@@ -479,7 +479,7 @@ Les tests (15) utilisent un faux moteur OCR : aucun modèle n'est chargé, ils s
 
 ## Configuration
 
-La seule variable d'environnement est `API_KEY`. Les autres réglages sont des constantes à modifier dans le code (puis reconstruire l'image) :
+Variables d'environnement : `API_KEY` (obligatoire) et `OCR_THREADS` (threads ONNX Runtime par moteur, défaut `4`, le plus rapide mesuré sur un i7 à 12 threads). Les autres réglages sont des constantes à modifier dans le code (puis reconstruire l'image) :
 
 | Constante | Fichier | Défaut | Effet |
 |---|---|---|---|
@@ -493,7 +493,7 @@ La seule variable d'environnement est `API_KEY`. Les autres réglages sont des c
 
 Modifier `app/ocr_engine.py` invalide la couche Docker qui contient les modèles : le build suivant les retélécharge.
 
-Performances mesurées sur CPU : un PDF scanné recto/verso de 2 pages est analysé en 9 à 15 s environ. Le modèle `tiny` est plus rapide mais ne lit plus la MRZ. MKL-DNN est désactivé car il plante avec Paddle 3.3.1.
+Performances mesurées sur CPU (Core i7-1355U, sous Docker) : `/extract` répond en 2 à 4 s pour un PDF recto/verso de 2 pages et en 1,5 à 2,5 s pour une seule page. Les modèles sont exécutés par ONNX Runtime (modèles `_onnx` officiels), environ 3 fois plus vite que Paddle Inference, dont l'accélération oneDNN plante avec Paddle 3.3.1. Le modèle `tiny` est plus rapide mais ne lit plus la MRZ ; réduire `MAX_WIDTH` à 1200 dégrade la zone visuelle.
 
 ## Limites connues
 
@@ -501,5 +501,5 @@ Performances mesurées sur CPU : un PDF scanné recto/verso de 2 pages est analy
 - **Pas de contrôle de péremption** : `documentExpiresAt` est comparée à la date de la MRZ, mais le service ne vérifie pas que le document est encore valide à la date du jour. Ce contrôle revient à l'appelant (`mrz.expiry_date`).
 - **Numéro de document** : sur certaines cartes, le numéro imprimé diffère de celui de la MRZ. C'est pourquoi `document_number` est purement informatif.
 - **Siècle des dates** : la date d'expiration est toujours lue en 20xx ; la date de naissance prend 19xx si l'année est postérieure à l'année en cours.
-- **Lenteur sur CPU** : 9 à 15 s par document de 2 pages, 2 analyses simultanées au plus sur un KVM 2. Au-delà, les clients reçoivent 503 et doivent réessayer après `Retry-After`.
+- **Charge sur CPU** : 2 à 4 s par document de 2 pages sur un i7 récent (davantage sur 2 vCPU), 2 analyses simultanées au plus sur un KVM 2. Au-delà, les clients reçoivent 503 et doivent réessayer après `Retry-After`.
 - **Une seule clé API** : la rotation impose de mettre à jour tous les clients en même temps.

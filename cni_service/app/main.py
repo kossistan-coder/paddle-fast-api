@@ -100,6 +100,9 @@ class MrzInfo(BaseModel):
     sex: str
     checks: dict[str, bool]
     lines: list[str]
+    # Nom et prenoms consolides : MRZ en priorite, zone visuelle si la MRZ ne les donne pas
+    last_name: str | None = None
+    first_names: str | None = None
 
 
 Decision = Literal["VERIFIED", "REVIEW", "REJECTED", "MRZ_NOT_FOUND"]
@@ -172,11 +175,13 @@ def _decode(data: bytes) -> list[np.ndarray]:
     return [image]
 
 
-def _mrz_info(m: MrzData) -> MrzInfo:
+def _mrz_info(m: MrzData, visual_zone: dict[str, str]) -> MrzInfo:
     return MrzInfo(format=m.format, document_type=m.doc_type, issuer=m.issuer,
                    nationality=m.nationality, document_number=m.doc_number, surname=m.surname,
                    given_names=m.given_names, birth_date=m.birth_date, expiry_date=m.expiry_date,
-                   sex=m.sex, checks=m.checks, lines=m.lines)
+                   sex=m.sex, checks=m.checks, lines=m.lines,
+                   last_name=m.surname or visual_zone.get("last_name"),
+                   first_names=" ".join(m.given_names) or visual_zone.get("first_names"))
 
 
 def _name_check(provided: str, extracted: str | None, threshold: float) -> FieldCheck:
@@ -294,7 +299,7 @@ async def verify(
     resp = VerifyResponse(
         decision="REJECTED",
         mrz_checksums_valid=mrz.checks_valid,
-        mrz=_mrz_info(mrz),
+        mrz=_mrz_info(mrz, parse_visual_zone(lines)),
         last_name=_name_check(lastName, mrz.surname, threshold),
         first_name=_first_name_check(firstName, given, threshold),
     )
@@ -335,5 +340,5 @@ async def extract(
     request.state.decision = "MRZ_FOUND" if mrz else "MRZ_NOT_FOUND"
     if mrz is None:
         return ExtractResponse(found=False, visual_zone=visual_zone)
-    return ExtractResponse(found=True, mrz_checksums_valid=mrz.checks_valid, mrz=_mrz_info(mrz),
+    return ExtractResponse(found=True, mrz_checksums_valid=mrz.checks_valid, mrz=_mrz_info(mrz, visual_zone),
                            visual_zone=visual_zone)
