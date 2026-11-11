@@ -35,11 +35,12 @@ class OcrEngine:
             image = cv2.resize(image, (MAX_WIDTH, round(h * MAX_WIDTH / w)), interpolation=cv2.INTER_AREA)
         with self._lock:
             results = self._ocr.predict(image)
+        width = image.shape[1]
         items = []
         for res in results:
             for text, poly in zip(res["rec_texts"], res["rec_polys"]):
                 poly = np.asarray(poly)
-                items.append((text, poly[:, 0].min(), poly[:, 1].mean(), np.ptp(poly[:, 1])))
+                items.append((text, poly[:, 0].min() / width, poly[:, 1].mean(), np.ptp(poly[:, 1])))
         return _group_lines(items)
 
     def read_lines_bottom(self, image: np.ndarray, fraction: float = 0.4) -> list[str]:
@@ -52,7 +53,15 @@ class OcrEngine:
         return self.read_lines(crop)
 
 
-def _group_lines(items: list[tuple[str, float, float, float]]) -> list[str]:
+class Line(str):
+    """Ligne de texte qui garde ses fragments (texte, x gauche relatif a la largeur de la page).
+
+    Les positions servent a la zone visuelle des passeports, ou la valeur est imprimee sous son libelle.
+    """
+    fragments: tuple[tuple[str, float], ...] = ()
+
+
+def _group_lines(items: list[tuple[str, float, float, float]]) -> list[Line]:
     """Regroupe les fragments (texte, x, y_centre, hauteur) situes sur la meme ligne."""
     rows: list[list] = []
     for item in sorted(items, key=lambda i: i[2]):
@@ -60,9 +69,13 @@ def _group_lines(items: list[tuple[str, float, float, float]]) -> list[str]:
             rows[-1].append(item)
         else:
             rows.append([item])
-    return ["".join(t for t, *_ in sorted(row, key=lambda i: i[1])) if _is_mrz_row(row)
-            else " ".join(t for t, *_ in sorted(row, key=lambda i: i[1]))
-            for row in rows]
+    lines = []
+    for row in rows:
+        row = sorted(row, key=lambda i: i[1])
+        line = Line(("" if _is_mrz_row(row) else " ").join(t for t, *_ in row))
+        line.fragments = tuple((t, x) for t, x, *_ in row)
+        lines.append(line)
+    return lines
 
 
 def _is_mrz_row(row: list) -> bool:

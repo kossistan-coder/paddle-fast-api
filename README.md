@@ -358,7 +358,7 @@ Toutes les pages sont lues (le recto d'une CNI porte des champs imprimés utiles
 | `found` | `true` si une MRZ a été trouvée |
 | `mrz_checksums_valid` | `true` si tous les chiffres de contrôle sont valides (`null` sans MRZ) |
 | `mrz` | Même objet que dans `/verify` (`null` sans MRZ) |
-| `visual_zone` | Champs imprimés hors MRZ repérés par leur libellé : `national_number`, `last_name`, `first_names`, `birth_date`, `place_of_birth`, `sex`, `profession`, `issue_date`, `expiry_date`, `height`, `blood_group`, `address`, `distinguishing_marks`, `father`, `mother`, `emergency_contact`. Seuls les libellés trouvés sont présents. Non vérifiés par checksum |
+| `visual_zone` | Champs imprimés hors MRZ repérés par leur libellé : `national_number`, `last_name`, `first_names`, `birth_date`, `place_of_birth`, `sex`, `profession`, `issue_date`, `expiry_date`, `height`, `blood_group`, `address`, `distinguishing_marks`, `father`, `mother`, `emergency_contact`, `document_number` (numéro du document, même nom que dans `mrz` : numéro de carte imprimé sans libellé sur la CNI, « N° du passeport » sur un passeport ; `national_number` est le NIN de la personne), et pour les passeports `nationality`, `place_of_issue`, `issuing_authority`. Les dates (`birth_date`, `issue_date`, `expiry_date`) sont au format `AAAA-MM-JJ`, comme dans `mrz` ; une date illisible est renvoyée telle qu'imprimée. Seuls les libellés trouvés sont présents. Non vérifiés par checksum |
 
 ```bash
 curl -sS -X POST https://api.example.com/extract -H "x-api-key: $API_KEY" -F file=@specimen.pdf
@@ -373,7 +373,7 @@ curl -sS -X POST https://api.example.com/extract -H "x-api-key: $API_KEY" -F fil
 }
 ```
 
-Sur une CNI togolaise, `visual_zone` contient par exemple `place_of_birth`, `profession` ou `address` lorsque ces libellés sont lus.
+Sur une CNI togolaise, `visual_zone` contient par exemple `place_of_birth`, `profession` ou `address` lorsque ces libellés sont lus. Sur un passeport, les libellés bilingues (« Lieu de naissance / Place of birth », « Lieu de délivrance / Place of issue », « Autorité / Authority »…) donnent notamment `place_of_birth`, `place_of_issue`, `issue_date` et `issuing_authority`.
 
 ### Codes HTTP
 
@@ -443,7 +443,7 @@ Les erreurs ont la forme `{"detail": "..."}`.
 
 | Fonction | Rôle |
 |---|---|
-| `parse_visual_zone` | Repère dans les lignes OCR les libellés imprimés (`Profession :`, `Domicile :`, `Né le :`…) et extrait la valeur jusqu'au libellé suivant de la même ligne ; garde la première occurrence de chaque champ. |
+| `parse_visual_zone` | Repère dans les lignes OCR les libellés imprimés (`Profession :`, `Domicile :`, `Né le :`…) et extrait la valeur jusqu'au libellé suivant de la même ligne ; garde la première occurrence de chaque champ. Complète ensuite avec les libellés de passeport (`_passport_fields`) : valeur dans le même fragment, sinon fragment aligné sur la ligne suivante (positions conservées par `Line.fragments`). |
 
 ## Développement local et tests
 
@@ -465,7 +465,7 @@ Créer `.env` avec `API_KEY=<clé>` (voir [Démarrage rapide](#démarrage-rapide
 
 La documentation interactive est alors sur http://127.0.0.1:8000/docs.
 
-Les tests (16) utilisent un faux moteur OCR : aucun modèle n'est chargé, ils s'exécutent en quelques secondes.
+Les tests (20) utilisent un faux moteur OCR : aucun modèle n'est chargé, ils s'exécutent en quelques secondes.
 
 ```bash
 .venv/bin/pip install pytest
@@ -497,7 +497,7 @@ Performances mesurées sur CPU (Core i7-1355U, sous Docker) : `/extract` répond
 
 ## Limites connues
 
-- **Zone visuelle** : `parse_visual_zone` est calibrée sur les libellés de la CNI togolaise. Sur d'autres documents, `visual_zone` peut être vide ou incomplète. Ces valeurs ne sont protégées par aucun chiffre de contrôle.
+- **Zone visuelle** : `parse_visual_zone` est calibrée sur les libellés de la CNI togolaise et sur les libellés bilingues français/anglais des passeports. Sur d'autres documents, `visual_zone` peut être vide ou incomplète. Ces valeurs ne sont protégées par aucun chiffre de contrôle.
 - **Pas de contrôle de péremption** : `documentExpiresAt` est comparée à la date de la MRZ, mais le service ne vérifie pas que le document est encore valide à la date du jour. Ce contrôle revient à l'appelant (`mrz.expiry_date`).
 - **Numéro de document** : sur certaines cartes, le numéro imprimé diffère de celui de la MRZ. C'est pourquoi `document_number` est purement informatif.
 - **Siècle des dates** : la date d'expiration est toujours lue en 20xx ; la date de naissance prend 19xx si l'année est postérieure à l'année en cours.
